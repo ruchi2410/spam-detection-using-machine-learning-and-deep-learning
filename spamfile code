@@ -1,0 +1,146 @@
+
+import os
+
+from collections import Counter
+from sklearn.model_selection import train_test_split as tts
+
+from sklearn import svm
+
+from sklearn.naive_bayes import MultinomialNB
+
+from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from sklearn.metrics import f1_score
+import pickle as c
+
+
+
+def save(clf,name):
+    with open(name,'wb') as fp:
+        c.dump(clf,fp)
+    print("saved") 
+        
+
+
+##Step1: Load Dataset
+
+
+
+
+def make_dict():
+    
+    direc = "G:\project-material 2020\SVMEmails"
+
+    files = os.listdir(direc)
+
+    emails =[ email for email in files]
+    words = []
+    c=len(emails)
+
+    os.chdir(r"G:\project-material 2020\SVMEmails")
+
+    for email in emails:
+        f = open(email,encoding="latin-1")
+        blob = f.read()
+        words+= blob.split(" ")
+        print(c)
+        c=c-1
+    
+    for i in range(len(words)):
+        if not words[i].isalpha():
+            words[i]=""
+    
+        
+    dictionary = Counter(words)
+    del dictionary[""]
+    return (dictionary.most_common(3000))   
+
+##Step2: Extract Features
+    
+def make_dataset(dictionary):
+    direc = "G:\project-material 2020\SVMEmails"
+
+    files = os.listdir(direc)
+
+    emails =[ email for email in files]
+   
+    feature_set = []
+    labels = []
+    c=len(emails)
+    
+    for email in emails:
+            data = []
+           
+            f = open(email,encoding="latin-1")
+            words = f.read().split(' ')
+            for entry in dictionary:
+                data.append(words.count(entry[0]))
+            feature_set.append(data)
+
+            if "ham" in email:
+                labels.append(0)
+            if "spam" in email:
+                labels.append(1)
+            print(c)
+            c=c-1
+        
+    return feature_set, labels
+
+##Step3: Split in to Training and Test Data
+
+d = make_dict()
+
+features, labels = make_dataset(d)
+
+
+
+
+
+    
+
+
+x_train,x_test,y_train,y_test = tts(features,labels,test_size=0.2)
+
+
+
+
+
+
+##Step4: Build a model
+
+tuned_parameter = {'kernel':['linear','rbf'],'gamma':[1e-3,1e-4],'C':[1,10,100,1000]}
+SVMclf = GridSearchCV(svm.SVC(),tuned_parameter)
+SVMclf.fit(x_train,y_train)
+
+preds= SVMclf.predict(x_test)
+print ("Accuracy score for SVM is:",accuracy_score(y_test,preds))
+print("Confusion Matrix for SVM is:\n",confusion_matrix(y_test,preds))
+print("Classification report for SVM  is:\n",classification_report(y_test,preds))
+print("F1 Measure for SVM is:",f1_score(y_test,preds))
+save(SVMclf,"text-classifier1.mdl")
+
+MNBclf = MultinomialNB()
+MNBclf.fit(x_train,y_train)
+
+preds= MNBclf.predict(x_test)
+print ("Accuracy score for MNB is:",accuracy_score(y_test,preds))
+print("Confusion Matrix for MNB is:\n",confusion_matrix(y_test,preds))
+print("Classification report for MNB is:\n",classification_report(y_test,preds))
+print("F1 Measure for MNB is:",f1_score(y_test,preds))
+#saved Model
+
+save(MNBclf,"text-classifier2.mdl")
+
+
+
+
+
+
+
+
+
+
+
