@@ -1,0 +1,238 @@
+import tensorflow as tf
+from keras.preprocessing.text import Tokenizer
+from keras.regularizers import l2
+from keras.preprocessing import sequence
+from keras import models
+from keras.models import Model
+from keras.optimizers import RMSprop,Nadam
+from keras import layers
+from keras.callbacks import EarlyStopping
+from keras.layers import LSTM,Activation,Dense,Dropout,Input,Embedding
+from numpy import zeros
+from random import shuffle
+from random import seed
+from sklearn.metrics import f1_score
+
+from matplotlib import pyplot
+
+#read the file given as input
+def read_lines():
+    train_lines = []
+    test_lines = []
+    current_lines = []
+
+    with open('SpamDetectionData.txt') as f: 
+        for line in f.readlines(): 
+            if line.startswith('# Test data', 0):
+                train_lines = current_lines
+                current_lines = test_lines
+            elif line.startswith('#', 0):
+                '''
+                Ignore comment lines
+                '''
+            elif line == '\n':
+                '''
+                Ignore empty lines
+                '''
+            else:
+                current_lines.append(line)
+
+    test_lines = current_lines
+    
+    seed(1337)
+    shuffle(train_lines)
+    shuffle(test_lines)
+
+    print('Read training lines: ', len(train_lines))
+    print('Read test lines: ', len(test_lines))
+
+    return train_lines, test_lines
+
+
+#splitting of lines on comma
+
+def split_lines(lines):
+    data = []
+    labels = []
+    maxtokens = 0
+    for line in lines:
+        label_part, data_part = line.replace('<p>','').replace('</p>','').replace('\n', '').split(',')
+        data.append(data_part)
+        labels.append(label_part)
+        if (len(data_part)>maxtokens):
+            maxtokens=len(data_part)
+
+    print('maxlen ', maxtokens)
+
+    return data, labels
+
+
+
+#vectorize the sequences
+def vectorize_sequences(sequences, dimension=4000):
+    results = zeros((len(sequences), dimension))
+    for i, sequence in enumerate(sequences):
+        results[i, sequence] = 1.0
+    return results
+
+'''
+The label vectorization is quite simple:
+  the value 1 is for spam,
+  the value 0 is form ham
+'''
+def vectorize_labels(labels):
+    results = zeros(len(labels))
+    for i, label in enumerate(labels):
+        if (label.lower() == 'spam'):
+            results[i] = 1
+    return results
+#prediction method call
+
+def test_predict(model, testtext, expected_label):
+    testtext_list = []
+    testtext_list.append(testtext)
+    testtext_sequence = tokenizer.texts_to_sequences(testtext_list)
+    x_testtext = vectorize_sequences(testtext_sequence)
+    prediction = model.predict(x_testtext)[0][0]
+    
+    print("Sentiment: %.3f" % prediction, 'Expected ', expected_label)
+
+    if prediction > 0.5:
+        if expected_label == 'Spam':
+            return True
+    else:
+        if expected_label == 'Ham':
+            return True
+    
+    return False
+
+# Start script
+
+# First split train lines from test lines
+train_lines, test_lines = read_lines()
+
+# Split data from label for each line
+train_data_raw, train_labels_raw = split_lines(train_lines)
+test_data_raw, test_labels_raw = split_lines(test_lines)
+
+# Use Keras Tokenizer to vectorize text: 
+max_words=30000
+max_len=4000
+tokenizer = Tokenizer(num_words=max_words)
+tokenizer.fit_on_texts(train_data_raw)
+#sequencing on training data
+train_data_seq = tokenizer.texts_to_sequences(train_data_raw)
+sequence_matrix = sequence.pad_sequences(train_data_seq,maxlen=None)
+
+#sequencing on testng data
+test_data_seq = tokenizer.texts_to_sequences(test_data_raw)
+test_sequences_matrix = sequence.pad_sequences(test_data_seq,maxlen=None)
+# Finally the integer sequenes are converted to a binary (numpy) matrix
+x_train = vectorize_sequences(train_data_seq, 4000)
+print('Lines of training data: ', len(x_train))
+x_test = vectorize_sequences(test_data_seq, 4000)
+print('Lines of test data: ', len(x_test))
+
+# The labels are also converted to a binary vector.
+# 1 means spam, 0 means ham
+y_train = vectorize_labels(train_labels_raw)
+print('Lines of training results: ', len(y_train))
+y_test = vectorize_labels(test_labels_raw)
+print('Lines of test results: ', len(y_test))
+ 
+# Now we build the Keras model
+
+def RNN():
+    inputs = Input(name='inputs',shape=[None])
+    layer = Embedding(max_words,50,input_length=max_len)(inputs)
+    layer = LSTM(64,W_regularizer=l2(0.001),recurrent_dropout=0.4,return_sequences=False)(layer)
+    layer = Dense(32,kernel_regularizer=tf.keras.regularizers.l2(0.001),name='FC1')(layer)
+    layer = Activation('relu')(layer)
+    #layer = Dropout(0.5)(layer)
+    layer = Dense(1,name='out_layer')(layer)
+    layer = Activation('sigmoid')(layer)
+    model = Model(inputs=inputs,outputs=layer)
+    return model
+
+#call function and compile model
+model = RNN()
+model.summary()
+print(model.input_shape)
+print(model.output_shape)
+model.compile(loss='binary_crossentropy',optimizer=Nadam(),metrics=['accuracy'])
+#fit the model on training data
+history = model.fit(sequence_matrix,y_train,batch_size=64,epochs=10,
+                    validation_split=0.3,callbacks=[EarlyStopping(monitor='val_loss',min_delta=0.0001)])
+
+print(sequence_matrix.shape,test_sequences_matrix.shape,y_train.shape,y_test.shape)
+
+
+
+
+history_dict = history.history
+
+# summarize history for accuracy
+pyplot.plot(history.history['accuracy'])
+pyplot.plot(history.history['val_accuracy'])
+pyplot.title('model accuracy')
+pyplot.ylabel('accuracy')
+pyplot.xlabel('epoch')
+pyplot.legend(['training', 'validation'], loc='lower right')
+pyplot.show()
+
+pyplot.clf()
+acc_values = history_dict['accuracy']
+
+epochs = range(1, len(acc_values) + 1)
+
+val_acc_values = history_dict['val_accuracy']
+pyplot.plot(epochs, acc_values, 'bo', label='Training accuracy')
+pyplot.plot(epochs, val_acc_values, 'b', label='Validation accuracy')
+pyplot.title('Training and validation accuracy')
+pyplot.xlabel('Epochs')
+pyplot.ylabel('Loss')
+pyplot.legend()
+pyplot.show()
+
+# summarize history for loss
+pyplot.plot(history.history['loss'])
+pyplot.plot(history.history['val_loss'])
+pyplot.title('model loss')
+pyplot.ylabel('loss')
+pyplot.xlabel('epoch')
+pyplot.legend(['training', 'validation'], loc='upper right')
+pyplot.show()
+
+# list all data in history
+print(history.history.keys())
+
+
+loss_values = history_dict['loss']
+val_loss_values = history_dict['val_loss']
+pyplot.plot(epochs, loss_values, 'bo', label='Training loss')
+pyplot.plot(epochs, val_loss_values, 'b', label='Validation loss')
+pyplot.title('Training and validation loss')
+pyplot.xlabel('Epochs')
+pyplot.ylabel('Loss')
+pyplot.legend()
+pyplot.show()
+
+
+
+results = model.evaluate(test_sequences_matrix, y_test)
+#print("F1 Measure for MNB is:",f1_score(y_test,results))
+print(model.metrics_names)
+print('Test result: ', results)
+
+# Manual test over all test records
+correct = 0
+wrong = 0
+for input_text, expected_label in zip(test_data_raw, test_labels_raw):
+    if test_predict(model, input_text, expected_label):
+        correct = correct + 1
+    else:
+        wrong = wrong + 1
+
+print('Predictions correct ', correct, ', wrong ', wrong)
+
+
